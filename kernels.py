@@ -5,7 +5,30 @@ Created on 22 oct. 2014
 '''
 import scipy as sp
 from scipy import spatial
+from parakeet import jit
 
+@jit
+def dist(x,z):
+        return sp.sum( (x-z)**2 )
+
+@jit
+def all_pairdistance(X,Z):
+    
+    return sp.array([[dist(x,z) for z in Z] for x in X])
+
+
+@jit
+def gram_distance(X):
+
+    n = X.shape[0]
+    D = sp.empty((n,n))
+
+    for i in range(n):
+        D[i,i]=0.0
+        for j in range(i+1,n):
+            D[i,j] = dist(X[i,:],X[j,:])
+            D[j,i] = D[i,j]
+    return D
 
 class KERNEL:
     def __init__(self):
@@ -33,9 +56,10 @@ class KERNEL:
             r=x.shape[0] # Get the rank of the matrix
             ## Compute the pairwise distance matrix
             if z is None:
-                D = spatial.distance.squareform(spatial.distance.pdist(x, 'sqeuclidean'), force='tomatrix')
+                D = gram_distance(x)
             else:
-                D = spatial.distance.cdist(x, z, 'sqeuclidean')
+                D = all_pairdistance(x,z)
+                
             ## Compute the Kernel matrix
             self.K = sp.exp(-0.5*D/(sig**2))
             del D
