@@ -6,8 +6,6 @@ Created on 18 oct. 2014
 import scipy as sp
 from scipy import linalg
 from kernels import KERNEL
-import multiprocessing as mp
-from functools import partial
 
 def estim_d(E,threshold):
     ''' The function estimates the intrinsic dimension by looking at the cumulative variance
@@ -184,8 +182,8 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
             # Compute Mi
             if self.precomputed is None:
                 Ki= KERNEL()
-                ri = Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig,compute_rank=1)                
-                self.ri.append(ri)
+                Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)                
+                self.ri.append(Ki.rank)
             else:
                 Ki = x[t,:][:,t]
                 self.ri.append(self.ni[i])

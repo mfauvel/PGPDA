@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 '''
 Created on 18 oct. 2014
 
@@ -18,10 +19,10 @@ xt = X[1::2,:]
 yt = Y[1::2]
 
 model=PGPDA()
-model.model = 'M1'
+model.model = 'M6'
 sig_r = 2.0**sp.arange(-4,4)
 threshold_r = sp.linspace(0.85,0.9999,10)
-dc_r =sp.arange(5,100,10)
+dc_r =sp.arange(5,30,2)
 
 sig,threshold,err=model.cross_validation(x, y,sig_r=sig_r,dc_r=dc_r,threshold_r=threshold_r)
 model.train(x,y)
@@ -30,3 +31,31 @@ conf = CONFUSION_MATRIX()
 conf.compute_confusion_matrix(yp,yt)
 print conf.Kappa
 print conf.OA
+
+# M0
+# 0.948987390141
+# 0.966292134831
+
+# M1 
+# 0.932009167303
+# 0.955056179775
+
+# M2
+# 0.948987390141
+# 0.966292134831
+
+# M3 
+# 0.932074031673
+# 0.955056179775
+
+# M4
+# 0.700039651071
+# 0.808988764045
+
+# M5
+# 0.948987390141
+# 0.966292134831
+
+# M6
+# 0.914274706222
+# 0.943820224719

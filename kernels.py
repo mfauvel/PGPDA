@@ -4,69 +4,68 @@ Created on 22 oct. 2014
 @author: mfauvel
 '''
 import scipy as sp
-from scipy import spatial
-from parakeet import jit
-
-@jit
-def dist(x,z):
-        return sp.sum( (x-z)**2 )
-
-@jit
-def all_pairdistance(X,Z):
+def sq_dist(x,z=None):
+    '''
+    The function to computes a matrix of all pairwise squared distances betteween two sets of vectors
+    Substract the mean value for numerical precision
     
-    return sp.array([[dist(x,z) for z in Z] for x in X])
-
-
-@jit
-def gram_distance(X):
-
-    n = X.shape[0]
-    D = sp.empty((n,n))
-
-    for i in range(n):
-        D[i,i]=0.0
-        for j in range(i+1,n):
-            D[i,j] = dist(X[i,:],X[j,:])
-            D[j,i] = D[i,j]
+    (x-z)^2 = x^2+z^2-2<x,z>
+    '''
+     
+    if z is None:
+        z=x
+        nx = x.shape[0]
+        mu = sp.mean(x,axis=0)
+        x-=mu
+        z-=mu
+        D = -2*sp.dot(x,z.T)
+        x2 = sp.sum(x**2,axis=1)
+        D += x2.reshape(nx,1)
+        D += x2.T.reshape(1,nx)
+    else:   
+        nx,nz = x.shape[0],z.shape[0]
+        n = nx+nz        
+        mu = (nx*sp.mean(x,axis=0)+nz*sp.mean(x,axis=0))/n
+        x -= mu
+        z -= mu
+        D = -2*sp.dot(x,z.T)
+        D += sp.sum(x**2,axis=1).reshape(nx,1)
+        D += sp.sum(z**2,axis=1).T.reshape(1,nz)
+                
     return D
 
 class KERNEL:
     def __init__(self):
         self.K=0
+        self.rank=0
         
-    def compute_kernel(self,x,z=None,kernel='RBF',sig=None,compute_rank=None):
+    def compute_kernel(self,x,z=None,kernel='RBF',sig=None):
         ''' 
-        Compute the kernel matrix
+        Compute the kernel matrix and the rank of the kernel
         Input:
             x : the sample matrix nxd (number of samples x number of variables)
             z : idem 
             kernel : the kernel used. Default: RBF.
             sig : the kernel parameter
-        Output
-            r = the rank of the kernel matrix
+
         '''
         # Free memory
         self.K=0.0
+        self.rank=0
         
         if (sig is None) and (kernel == 'RBF'):
-            print 'Parameters must be selected for the RBF kernel. The program is closed.'
+            print 'Parameters must be selected for the RBF kernel.'
             exit()
             
         if kernel == 'RBF':
-            r=x.shape[0] # Get the rank of the matrix
+            self.rank=x.shape[0] # Get the rank of the matrix
             ## Compute the pairwise distance matrix
-            if z is None:
-                D = gram_distance(x)
-            else:
-                D = all_pairdistance(x,z)
+            D = sq_dist(x,z)
                 
             ## Compute the Kernel matrix
             self.K = sp.exp(-0.5*D/(sig**2))
             del D
-        
-        if compute_rank is not None:
-            return r
-        
+      
     def compute_diag_kernel(self,x,kernel='RBF',sig=None):
         '''
         The function computes the kernel evaluation K(x_i,x_i)
