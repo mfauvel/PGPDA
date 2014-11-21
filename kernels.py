@@ -4,15 +4,16 @@ Created on 22 oct. 2014
 @author: mfauvel
 '''
 import scipy as sp
-def sq_dist(x,z=None):
+def sq_dist(X,Z=None):
     '''
-    The function to computes a matrix of all pairwise squared distances betteween two sets of vectors
+    The function to computes a matrix of all pairwise squared distances between two sets of vectors
     Substract the mean value for numerical precision
     
     (x-z)^2 = x^2+z^2-2<x,z>
     '''
+    x=X.copy()
      
-    if z is None:
+    if Z is None:
         z=x
         nx = x.shape[0]
         mu = sp.mean(x,axis=0)
@@ -22,7 +23,8 @@ def sq_dist(x,z=None):
         x2 = sp.sum(x**2,axis=1)
         D += x2.reshape(nx,1)
         D += x2.T.reshape(1,nx)
-    else:   
+    else:
+        z=Z.copy() 
         nx,nz = x.shape[0],z.shape[0]
         n = nx+nz        
         mu = (nx*sp.mean(x,axis=0)+nz*sp.mean(x,axis=0))/n
@@ -38,6 +40,7 @@ class KERNEL:
     def __init__(self):
         self.K=0
         self.rank=0
+        self.kd=0
         
     def compute_kernel(self,x,z=None,kernel='RBF',sig=None):
         ''' 
@@ -52,6 +55,7 @@ class KERNEL:
         # Free memory
         self.K=0.0
         self.rank=0
+        self.kd=0
         
         if (sig is None) and (kernel == 'RBF'):
             print 'Parameters must be selected for the RBF kernel.'
