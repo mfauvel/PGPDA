@@ -55,40 +55,6 @@ def standardize(x,M=None,S=None,REVERSE=None):
     else:
         return S*x+M
 
-def scale(x,M=None,m=None,REVERSE=None):
-    ''' Function that standardize the data
-        Input:
-            x: the data
-            M: the Max vector
-            m: the Min vector
-        Output:
-            x: the standardize data
-            M: the Max vector
-            m: the Min vector
-    '''
-    if not sp.issubdtype(x.dtype,float):
-        do_convert = 1
-    else:
-        do_convert = 0
-    if REVERSE is None:
-        if M is None:
-            M = sp.amax(x,axis=0)
-            m = sp.amin(x,axis=0)
-            if do_convert:
-                xs = (x.astype('float')-M)/(M-m)
-            else:
-                xs = (x-m)/(M-m)
-            return xs,M,m
-        else:
-            if do_convert:
-                xs = (x.astype('float')-M)/(M-m)
-            else:
-                xs = (x-m)/(M-m)
-            return xs
-    else:
-        return (M-m)*x+m
-    
-
 class CV:#Cross_validation 
     def __init__(self):
         self.it=[]
@@ -143,11 +109,12 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         Input:
             x: the samples matrix of size n x d
             y: the vector with label of size n
+            For the precomputed case (self.precomputed==1), x is a KERNEL object.
         Output:
             None; The model is included/updates in the object
         '''
         # Initialization
-        n = x.shape[0]
+        n = y.shape[0]
         C = int(y.max())
         eps = sp.finfo(sp.float64).eps      
         list_model_dc = 'M1 M3 M4 M6'
@@ -180,13 +147,14 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
             self.prop.append(float(self.ni[i])/n)
             
             # Compute Mi
+            Ki= KERNEL()
             if self.precomputed is None:
-                Ki= KERNEL()
                 Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)                
-                self.ri.append(Ki.rank)
             else:
-                Ki = x[t,:][:,t]
-                self.ri.append(self.ni[i])
+                Ki.K = x.K[t,:][:,t].copy()
+                Ki.rank = Ki.K.shape[0]
+                
+            self.ri.append(Ki.rank)
             Ki.center_kernel()
             Ki.scale_kernel(self.ni[i])
                         
@@ -272,7 +240,11 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         '''
          
         # Initialization
-        nt = xt.shape[0]
+        if isinstance(xt,sp.ndarray):
+            nt = xt.shape[0]
+        else:
+            nt = xt.K.shape[0]
+            
         C = int(y.max())
         eps = sp.finfo(sp.float64).eps
         dm = max(self.di)
@@ -289,6 +261,10 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
                 Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)
                 Kt.compute_kernel(xt,z=x[t,:],kernel=self.kernel,sig=self.sig)
                 kd.compute_diag_kernel(xt,kernel=self.kernel,sig=self.sig)
+            else:
+                Ki.K= x.K[t,:][:,t].copy()
+                Kt.K= xt.K[:,t].copy()
+                kd.K= xt.kd.copy()
             Kt.center_kernel(Ko=Ki, kd=kd)
             Ki.K=None
 
