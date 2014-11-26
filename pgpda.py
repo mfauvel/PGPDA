@@ -103,7 +103,7 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         self.ri = []
         self.precomputed = None
         
-    def train(self,x,y,sig=None,dc=None,threshold=0.95):
+    def train(self,x,y,sig=None,dc=None,threshold=None):
         '''
         The function trains the pgpda model using the training samples
         Input:
@@ -344,3 +344,140 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
             self.sig = sig_r[t[0][0]]
             self.dc = dc_r[t[1][0]]
             return sig_r[t[0][0]],dc_r[t[1][0]],err
+
+class KDA: # Kernel QDA from "Toward an Optimal Supervised Classifier for the Analysis of Hyperspectral Data"
+    def __init__(self,mu=None,sig=None):
+        self.a = []
+        self.A = []
+        self.S = []
+        self.ni = []
+        self.prop=[]
+        self.sig=sig
+        self.mu=mu
+    
+    def train(self,x,y,mu=None,sig=None):
+        # Initialization
+        n = y.shape[0]
+        C = int(y.max())
+        eps = sp.finfo(sp.float64).eps 
+        
+        if (mu is None) and (self.mu is None):
+            mu=10**(-7)
+        elif self.mu is None:
+            self.mu =mu
+            
+        if (sig is None) and (self.sig is None):
+            self.sig=0.5
+        elif self.sig is None:
+            self.sig=sig
+        
+        # Compute K and 
+        K = KERNEL()
+        K.compute_kernel(x,sig=self.sig)
+        G = KERNEL()
+        G.K = self.mu*sp.eye(n)
+                    
+        for i in range(C):
+            t = sp.where(y==(i+1))[0]
+            self.ni.append(sp.size(t))
+            self.prop.append(float(self.ni[i])/n)
+        
+            # Compute K_k
+            Ki = KERNEL()
+            Ki.compute_kernel(x, z=x[t,:],sig=self.sig)
+            T = (sp.eye(self.ni[i])-sp.ones((self.ni[i],self.ni[i])))
+            Ki.K = sp.dot(Ki.K,T)
+            del T
+            G.K += sp.dot(Ki.K,Ki.K.T)/self.ni[i]
+        G.scale_kernel(C)
+        
+        # Solve the generalized eigenvalue problem
+        a,A = linalg.eigh(G.K,b=K.K)
+        idx = a.argsort()[::-1]
+        a=a[idx]
+        A=A[:,idx]
+        
+        # Remove negative eigenvalue
+        t = sp.where(a>eps)[0]
+        a=a[t]
+        A=A[:,t]
+        
+        # Normalize the eigenvalue
+        for i in range(a.size):
+            A[:,i]/=sp.sqrt(sp.dot(sp.dot(A[:,i].T,K.K),A[:,i]))
+        
+        # Update model   
+        self.a=a
+        self.A=A
+        self.S= sp.dot(sp.dot(self.A,sp.diag(self.a**(-1))),self.A.T)
+        
+        # Free memory
+        del G,K
+    
+    def predict(self,xt,x,y,out_decision=None,out_proba=None):
+        nt = xt.shape[0]
+        C = int(y.max())
+        D = sp.empty((nt,C))
+        D += self.prop
+        eps = sp.finfo(sp.float64).eps
+        
+        # Pre compute the Gramm kernel matrix
+        Kt = KERNEL()
+        Kt.compute_kernel(xt,z=x,sig=self.sig)
+        Ki = KERNEL()
+                
+        for i in range(C):
+            t = sp.where(y==(i+1))[0]
+            Ki.compute_kernel(x,z=x[t,:],sig=self.sig)
+            T = Kt.K - sp.dot(Ki.K,sp.ones((self.ni[i]))/self.ni[i])
+            temp = sp.dot(T,self.S)
+            D[:,i] = sp.sum(T*temp,axis=1)
+        
+        # Check if negative value
+        if D.min() <0:
+            D-=D.min()
+        
+        yp = D.argmin(1)+1
+        yp.shape=(nt,1)
+
+        # Format the output
+        if out_proba is None:
+            if out_decision is None:
+                return yp
+            else:
+                return yp,D
+        else:        
+            # Compute posterior !! Should be changed to a safe version
+            P = sp.exp(-0.5*D)
+            P /= sp.sum(P,axis=1).reshape(nt,1)
+            P[P<eps]=0                    
+        return yp,D,P
+    
+    def cross_validation(self,x,y,v=5,sig_r=2.0**sp.arange(-8,0),mu_r=10.0**sp.arange(-15,0)):
+        # Get parameters
+        n=x.shape[0]
+        ns = sig_r.size
+        nm = mu_r.size
+        err = sp.zeros((ns,nm))
+        
+        # Initialization of the indices for the cross validation
+        cv = CV()           
+        cv.split_data(n,v=v)
+        
+        for i in range(ns):
+            for j in range(nm):
+                for k in range(v):
+                    model_temp=KDA()
+                    model_temp.train(x[cv.it[k],:],y[cv.it[k]],sig=sig_r[i],mu=mu_r[j])
+                    yp = model_temp.predict(x[cv.iT[k],:],x[cv.it[k],:],y[cv.it[k]])
+                    yp.shape = y[cv.iT[k]].shape
+                    t = sp.where(yp!=y[cv.iT[k]])[0]
+                    err[i,j]+= float(t.size)/yp.size
+                    del model_temp
+        err/=v
+        t = sp.where(err==err.min())
+        self.sig = sig_r[t[0][0]]
+        self.mu = mu_r[t[1][0]]
+        return sig_r[t[0][0]],mu_r[t[1][0]],err
+                    
+                
