@@ -103,15 +103,21 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         self.ri = []
         self.precomputed = None
         
-    def train(self,x,y,sig=None,dc=None,threshold=None):
+    def train(self,x,y,sig=None,dc=None,threshold=None,Fast=None,E=None,Beta=None):
         '''
         The function trains the pgpda model using the training samples
-        Input:
-            x: the samples matrix of size n x d
-            y: the vector with label of size n
-            For the precomputed case (self.precomputed==1), x is a KERNEL object.
-        Output:
-            None; The model is included/updates in the object
+        Inputs:
+        x: the samples matrix of size n x d, for the precomputed case (self.precomputed==1), x is a KERNEL object.
+        y: the vector with label of size n
+        sig: the parameter of the kernel function
+        dc: the number of dimension of the singanl subspace
+        threshold: the value of the cummulative variance that should be reached
+        Fast: for precomputed case, used in the cross-validation case. It is assumed that the eigendecomposition is already done. E and Beta should provided.
+        E: the eigenvalue in deacreasing order
+        Beta: the corresponding eigenvectors
+
+        Outputs:
+        None - The model is included/updated in the object
         '''
         # Initialization
         n = y.shape[0]
@@ -145,25 +151,28 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
             t = sp.where(y==(i+1))[0]
             self.ni.append(sp.size(t))
             self.prop.append(float(self.ni[i])/n)
-            
-            # Compute Mi
-            Ki= KERNEL()
-            if self.precomputed is None:
-                Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)                
-            else:
-                Ki.K = x.K[t,:][:,t].copy()
-                Ki.rank = Ki.K.shape[0]
-                
-            self.ri.append(Ki.rank)
-            Ki.center_kernel()
-            Ki.scale_kernel(self.ni[i])
+
+            if Fast is None:
+                # Compute Mi
+                Ki= KERNEL()
+                if self.precomputed is None:
+                    Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)                
+                else:
+                    Ki.K = x.K[t,:][:,t].copy()
+                    Ki.rank = Ki.K.shape[0]
+                    
+                self.ri.append(Ki.rank)
+                Ki.center_kernel()
+                Ki.scale_kernel(self.ni[i])
                         
-            # Eigenvalue decomposition TBD 
-            E,Beta = linalg.eigh(Ki.K)
-            idx = E.argsort()[::-1]
-            E = E[idx]
-            E[E<eps]=eps
-            Beta = Beta[:,idx]
+                # Eigenvalue decomposition TBD 
+                E,Beta = linalg.eigh(Ki.K)
+                idx = E.argsort()[::-1]
+                E = E[idx]
+                E[E<eps]=eps
+                Beta = Beta[:,idx]
+            else:
+                self.ri.append(E[i].size)
             
             # Parameter estimation
             if list_model_dc.find(self.model) == -1:
@@ -172,7 +181,10 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
                 di = self.dc
             self.di.append(di)
             self.a.append(E[0:di])
-            self.b += self.prop[i]*(sp.trace(Ki.K)-sp.sum(self.a[i]))            
+            if Fast is None:
+                self.b += self.prop[i]*(sp.trace(Ki.K)-sp.sum(self.a[i]))
+            else:
+                self.b += self.prop[i]*(sp.sum(E[i])-sp.sum(self.a[i]))
             self.Beta.append(Beta[:,0:di])
             del Beta,E
             
@@ -225,7 +237,8 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
                 self.A.append(sp.dot(temp,self.Beta[i].T)/self.ni[i])
                 
         self.A = sp.asarray(self.A)   
-           
+
+       
     def predict(self,xt,x,y,out_decision=None,out_proba=None):
         '''
         The function predicts the label for each sample with the learned model
@@ -407,12 +420,12 @@ class KDA: # Kernel QDA from "Toward an Optimal Supervised Classifier for the An
             A[:,i]/=sp.sqrt(sp.dot(sp.dot(A[:,i].T,K.K),A[:,i]))
         
         # Update model   
-        self.a=a
-        self.A=A
+        self.a=a.copy()
+        self.A=A.copy()
         self.S= sp.dot(sp.dot(self.A,sp.diag(self.a**(-1))),self.A.T)
         
         # Free memory
-        del G,K
+        del G,K,a,A
     
     def predict(self,xt,x,y,out_decision=None,out_proba=None):
         nt = xt.shape[0]
