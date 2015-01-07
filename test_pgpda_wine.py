@@ -8,6 +8,7 @@ from pgpda import *
 from accuracy_index import *
 import time
 import scipy.io as sio
+
 data = sp.loadtxt('wine.data',delimiter=',')
 Y = data[:,0]
 X = data[:,1:]
