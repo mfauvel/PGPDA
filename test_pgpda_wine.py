@@ -20,7 +20,7 @@ xt = X[1::2,:]
 yt = Y[1::2]
 
 model=PGPDA()
-model.model = 'M0'
+model.model = 'M5'
 sig_r = 2.0**sp.arange(-4,4)
 threshold_r = sp.linspace(0.85,0.9999,10)
 dc_r =sp.arange(5,30,2)
@@ -55,7 +55,7 @@ print conf.OA
 
 # M5
 # 0.948987390141
-# 0.966292134831
+# 0.966292134831
 
 # M6
 # 0.684583579445
