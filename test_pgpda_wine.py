@@ -19,10 +19,10 @@ xt = X[1::2,:]
 yt = Y[1::2]
 
 model=PGPDA()
-model.model = 'M6'
+model.model = 'M4'
 sig_r = 2.0**sp.arange(-4,4)
 threshold_r = sp.linspace(0.85,0.9999,10)
-dc_r =sp.arange(5,30,2)
+dc_r =sp.arange(5,30,10)
 
 sig,threshold,err=model.cross_validation(x, y,sig_r=sig_r,dc_r=dc_r,threshold_r=threshold_r)
 model.train(x,y)
