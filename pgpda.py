@@ -104,7 +104,7 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         self.ri = []
         self.precomputed = None
         
-    def train(self,x,y,sig=None,dc=None,threshold=None,Fast=None,E_=None,Beta_=None):
+    def train(self,x,y,sig=None,dc=None,threshold=None):
         '''
         The function trains the pgpda model using the training samples
         Inputs:
@@ -113,10 +113,7 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         sig: the parameter of the kernel function
         dc: the number of dimension of the singanl subspace
         threshold: the value of the cummulative variance that should be reached
-        Fast: for precomputed case, used in the cross-validation case. It is assumed that the eigendecomposition is already done. E and Beta should provided.
-        E_: the eigenvalue in deacreasing order
-        Beta_: the corresponding eigenvectors
-
+        
         Outputs:
         None - The model is included/updated in the object
         '''
@@ -153,31 +150,26 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
             self.ni.append(sp.size(t))
             self.prop.append(float(self.ni[i])/n)
 
-            if Fast is None:
-                # Compute Mi
-                Ki= KERNEL()
-                if self.precomputed is None:
-                    Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)                
-                else:
-                    Ki.K = x.K[t,:][:,t].copy()
-                    Ki.rank = Ki.K.shape[0]
-                    
-                self.ri.append(Ki.rank)
-                Ki.center_kernel()
-                Ki.scale_kernel(self.ni[i])
-                        
-                # Eigenvalue decomposition TBD 
-                E,Beta = linalg.eigh(Ki.K)
-                idx = E.argsort()[::-1]
-                E = E[idx]
-                E[E<eps]=eps
-                Beta = Beta[:,idx]
-            else:
-                E=E_[i]
-                Beta=Beta_[i]
-                self.ri.append(E.size)
-
             
+            # Compute Mi
+            Ki= KERNEL()
+            if self.precomputed is None:
+                Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)                
+            else:
+                Ki.K = x.K[t,:][:,t].copy()
+                Ki.rank = Ki.K.shape[0]
+                
+            self.ri.append(Ki.rank)
+            Ki.center_kernel()
+            Ki.scale_kernel(self.ni[i])
+            
+            # Eigenvalue decomposition TBD 
+            E,Beta = linalg.eigh(Ki.K)
+            idx = E.argsort()[::-1]
+            E = E[idx]
+            E[E<eps]=eps
+            Beta = Beta[:,idx]
+                        
             
             # Parameter estimation
             if list_model_dc.find(self.model) == -1:
@@ -186,10 +178,7 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
                 di = self.dc
             self.di.append(di)
             self.a.append(E[0:di])
-            if Fast is None:
-                self.b += self.prop[i]*(sp.trace(Ki.K)-sp.sum(self.a[i]))
-            else:
-                self.b += self.prop[i]*(sp.sum(E)-sp.sum(self.a[i]))
+            self.b += self.prop[i]*(sp.trace(Ki.K)-sp.sum(self.a[i]))
             self.Beta.append(Beta[:,0:di])
             del Beta,E
             
@@ -358,119 +347,6 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
                         t = sp.where(yp!=y[cv.iT[k]])[0]
                         err[i,j]+= float(t.size)/yp.size
                         del model_temp
-            err/=v
-            t = sp.where(err==err.min())
-            self.sig = sig_r[t[0][0]]
-            self.dc = dc_r[t[1][0]]
-            return sig_r[t[0][0]],dc_r[t[1][0]],err
-
-    def cross_validation_fast(self,x,y,v=5,sig_r=2.0**sp.arange(-8,0),threshold_r=sp.linspace(0.85,0.9999,10),dc_r=sp.arange(5,50)):
-        '''
-        To be done and can be changed by using pre-computed kernels
-        '''
-        # Get parameters
-        n=x.shape[0]
-        ns = sig_r.size
-        nt = threshold_r.size
-        nd = dc_r.size
-        C = int(y.max())
-        eps = sp.finfo(sp.float64).eps
-        conf = CONFUSION_MATRIX()
-
-        if self.model == 'M0' or self.model=='M2' or self.model =='M5':
-            err = sp.zeros((ns,nt))
-        else:
-            err = sp.zeros((ns,nd))
-            
-        # Initialization of the indices for the cross validation
-        cv = CV()           
-        cv.split_data(n,v=v)
-        
-        # Start the cross-validation
-        if self.model == 'M0' or self.model=='M2' or self.model =='M5':
-            for k in range(v):
-                for i in range(ns):
-                    # Pre compute kernel and Eigenvalues/Eigenvectors
-                    K = KERNEL()
-                    K.compute_kernel(x[cv.it[k],:],sig=sig_r[i])
-                    Kt = KERNEL()
-                    Kt.compute_kernel(x[cv.iT[k],:],z=x[cv.it[k],:],sig=sig_r[i])
-                    Kt.kd = sp.ones((x[cv.iT[k],:].shape[0],1))
-                    
-                    E_,Beta_=list(),list()
-                    for l in range(C):
-                        t = sp.where(y[cv.it[k]]==(l+1))[0]
-                        ni= sp.size(t)
-                        Ki= KERNEL()
-                        Ki.K = K.K[t,:][:,t].copy()
-                        Ki.center_kernel()
-                        Ki.scale_kernel(ni)
-                    
-                        E,Beta = linalg.eigh(Ki.K)
-                        idx = E.argsort()[::-1]
-                        E = E[idx]
-                        E[E<eps]=eps
-                        Beta = Beta[:,idx]
-                        E_.append(E)
-                        Beta_.append(Beta)
-                        del Ki, E, Beta
-
-                    for j in range(nt):
-                        model_tp = PGPDA(model=self.model)
-                        model_tp.precomputed = 1
-                        
-                        model_tp.train(K,y[cv.it[k]],threshold=threshold_r[j],Fast=1,E_=E_,Beta_=Beta_)
-                        yp = model_tp.predict(Kt,K,y[cv.it[k]])
-                        yp.shape = y[cv.iT[k]].shape
-                        #t = sp.where(yp!=y[cv.iT[k]])[0]
-                        #err[i,j]+= float(t.size)/yp.size
-                        conf.compute_confusion_matrix(yp,y[cv.iT[k]])
-                        err[i,j] += (1-conf.OA)
-                        del model_tp
-            err/=v
-            t = sp.where(err==err.min())
-            self.sig = sig_r[t[0][0]]
-            self.threshold = threshold_r[t[1][0]]
-            return sig_r[t[0][0]],threshold_r[t[1][0]],err
-        
-        else:
-            for k in range(v):
-                for i in range(ns):
-                    # Pre compute kernel and Eigenvalues/Eigenvectors
-                    K = KERNEL()
-                    K.compute_kernel(x[cv.it[k],:],sig=sig_r[i])
-                    Kt = KERNEL()
-                    Kt.compute_kernel(x[cv.iT[k],:],z=x[cv.it[k],:],sig=sig_r[i])
-                    Kt.kd = sp.ones((x[cv.iT[k],:].shape[0],1))
-                    
-                    E_,Beta_=list(),list()
-                    for l in range(C):
-                        t = sp.where(y[cv.it[k]]==(l+1))[0]
-                        ni=t.size
-                        Ki= KERNEL()
-                        Ki.K = K.K[t,:][:,t].copy()
-                        Ki.center_kernel()
-                        Ki.scale_kernel(ni)
-                    
-                        E,Beta = linalg.eigh(Ki.K)
-                        idx = E.argsort()[::-1]
-                        E = E[idx]
-                        E[E<eps]=eps
-                        Beta = Beta[:,idx]
-                        E_.append(E)
-                        Beta_.append(Beta)
-                    del Ki, E, Beta
-                    
-                    for j in range(nd):
-                        model_tp = PGPDA(model=self.model)
-                        model_tp.precomputed = 1
-                        
-                        model_tp.train(K,y[cv.it[k]],dc=dc_r[j],Fast=1,E_=E_,Beta_=Beta_)
-                        yp = model_tp.predict(Kt,K,y[cv.it[k]])
-                        yp.shape = y[cv.iT[k]].shape
-                        t = sp.where(yp!=y[cv.iT[k]])[0]
-                        err[i,j]+= float(t.size)/yp.size
-                        del model_tp
             err/=v
             t = sp.where(err==err.min())
             self.sig = sig_r[t[0][0]]
