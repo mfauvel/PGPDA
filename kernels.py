@@ -18,7 +18,7 @@ def find_optimal_sig(x,y,sig_r=2.0**sp.arange(-5,5,0.5),ncpus=None):
     A =  [compute_alignement(sig,x,y,ncpus) for sig in sig_r]
     A = sp.asarray(A)
 
-    t = A.argmin()
+    t = A.argmax()
     return sig_r[t],A
 
 def compute_alignement(sig,x,y,ncpus=2):
@@ -93,7 +93,7 @@ def compute_alignement(sig,x,y,ncpus=2):
     return_val=A;
     """
     A=weave.inline(code,['sig','n','d','x','y','ncpus'],support_code=support_code,type_converters = converters.blitz,compiler='gcc',extra_compile_args =['-O3 -fopenmp'], extra_link_args=['-lgomp'],)
-    return 1-A
+    return A
 
 def sq_dist(X,Z=None):
     '''

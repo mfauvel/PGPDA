@@ -8,6 +8,41 @@ from scipy import linalg
 from kernels import KERNEL
 from accuracy_index import *
 
+def pre_compute_E_Beta(x,y,sig,kernel='RBF'):
+    '''
+    Function that pre computes the kernel eigenvalues/eigenfunctions during the cross-validation
+    Input:
+    x,y: the sample matrix and the label
+    sig: the value of the kernel parameters
+    Output:
+    E_: a list of eigenvalues
+    Beta_: a list of corresponding eigenvectors
+    '''
+    n = y.shape[0]
+    C = int(y.max())
+    eps = sp.finfo(sp.float64).eps      
+    E_=[]
+    Beta_=[]
+
+    for i in range(C):
+        t = sp.where(y==(i+1))[0]
+        ni=t.size
+        Ki= KERNEL()
+        Ki.compute_kernel(x[t,:],kernel=kernel,sig=sig)
+        Ki.center_kernel()
+        Ki.scale_kernel(ni)
+        
+        E,Beta = linalg.eigh(Ki.K)
+        idx = E.argsort()[::-1]
+        E = E[idx]
+        E[E<eps]=eps
+        Beta = Beta[:,idx]
+        E_.append(E)
+        Beta_.append(Beta)
+
+    del E, Beta_, Ki
+    return E_,Beta_
+    
 def estim_d(E,threshold):
     ''' The function estimates the intrinsic dimension by looking at the cumulative variance
     Input:
@@ -104,7 +139,7 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         self.ri = []
         self.precomputed = None
         
-    def train(self,x,y,sig=None,dc=None,threshold=None):
+    def train(self,x,y,sig=None,dc=None,threshold=None,fast=None,E_=None,Beta_=None):
         '''
         The function trains the pgpda model using the training samples
         Inputs:
@@ -113,6 +148,7 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         sig: the parameter of the kernel function
         dc: the number of dimension of the singanl subspace
         threshold: the value of the cummulative variance that should be reached
+        fast = option used to perform a fast CV: only the parameter dc/threshold is learn
         
         Outputs:
         None - The model is included/updated in the object
@@ -150,26 +186,31 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
             self.ni.append(sp.size(t))
             self.prop.append(float(self.ni[i])/n)
 
+            if fast is None:
+                # Compute Mi
+                Ki= KERNEL()
+                if self.precomputed is None:
+                    Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)                
+                else:
+                    Ki.K = x.K[t,:][:,t].copy()
+                    Ki.rank = Ki.K.shape[0]
+                    
+                self.ri.append(Ki.rank)
+                Ki.center_kernel()
+                Ki.scale_kernel(self.ni[i])
+                TraceKi = sp.trace(Ki.K)
             
-            # Compute Mi
-            Ki= KERNEL()
-            if self.precomputed is None:
-                Ki.compute_kernel(x[t,:],kernel=self.kernel,sig=self.sig)                
+                # Eigenvalue decomposition  
+                E,Beta = linalg.eigh(Ki.K)
+                idx = E.argsort()[::-1]
+                E = E[idx]
+                E[E<eps]=eps
+                Beta = Beta[:,idx]
             else:
-                Ki.K = x.K[t,:][:,t].copy()
-                Ki.rank = Ki.K.shape[0]
-                
-            self.ri.append(Ki.rank)
-            Ki.center_kernel()
-            Ki.scale_kernel(self.ni[i])
-            
-            # Eigenvalue decomposition TBD 
-            E,Beta = linalg.eigh(Ki.K)
-            idx = E.argsort()[::-1]
-            E = E[idx]
-            E[E<eps]=eps
-            Beta = Beta[:,idx]
-                        
+                E=E_[i]
+                Beta=Beta_[i]
+                self.ri.append(E.size)
+                TraceKi = sp.sum(E)
             
             # Parameter estimation
             if list_model_dc.find(self.model) == -1:
@@ -178,7 +219,7 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
                 di = self.dc
             self.di.append(di)
             self.a.append(E[0:di])
-            self.b += self.prop[i]*(sp.trace(Ki.K)-sp.sum(self.a[i]))
+            self.b += self.prop[i]*(TraceKi-sp.sum(self.a[i]))
             self.Beta.append(Beta[:,0:di])
             del Beta,E
             
@@ -321,12 +362,15 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
         # Start the cross-validation
         if self.model == 'M0' or self.model=='M2' or self.model =='M5':
             for i in range(ns):
-                for j in range(nt):
-                    for k in range(v):
+                for k in range(v):
+                    # Precompute the E and Beta
+                    E_,Beta_=pre_compute_E_Beta(x[cv.it[k],:],y[cv.it[k]],sig_r[i])
+                    # test several threshold
+                    for j in range(nt):
                         model_temp = PGPDA(model=self.model,kernel=self.kernel)
-                        model_temp.train(x[cv.it[k],:],y[cv.it[k]],sig=sig_r[i],threshold=threshold_r[j])
+                        model_temp.train(x[cv.it[k],:],y[cv.it[k]],sig=sig_r[i],threshold=threshold_r[j],fast=1,E_=E_,Beta_=Beta_)
                         yp = model_temp.predict(x[cv.iT[k],:],x[cv.it[k],:],y[cv.it[k]])
-                        yp.shape = y[cv.iT[k]].shape
+                        yp.shape = y[cv.iT[k]].shape                        
                         t = sp.where(yp!=y[cv.iT[k]])[0]
                         err[i,j]+= float(t.size)/yp.size
                         del model_temp
@@ -338,10 +382,13 @@ class PGPDA: # Parcimonious Gaussian Process Discriminant Analysis
                         
         else:
             for i in range(ns):
-                for j in range(nd):
-                    for k in range(v):
+                for k in range(v):
+                    # Precompute the E and Beta
+                    E_,Beta_=pre_compute_E_Beta(x[cv.it[k],:],y[cv.it[k]],sig_r[i])
+                    # test several threshold
+                    for j in range(nd):
                         model_temp = PGPDA(model=self.model,kernel=self.kernel)
-                        model_temp.train(x[cv.it[k],:],y[cv.it[k]],sig=sig_r[i],dc=dc_r[j])
+                        model_temp.train(x[cv.it[k],:],y[cv.it[k]],sig=sig_r[i],dc=dc_r[j],fast=1,E_=E_,Beta_=Beta_)
                         yp = model_temp.predict(x[cv.iT[k],:],x[cv.it[k],:],y[cv.it[k]])
                         yp.shape = y[cv.iT[k]].shape
                         t = sp.where(yp!=y[cv.iT[k]])[0]
