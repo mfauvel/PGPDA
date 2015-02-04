@@ -1,8 +1,4 @@
-'''
-Created on 18 oct. 2014
-
-@author: mfauvel
-'''
+# -*- coding: utf-8 -*-
 import scipy as sp
 from scipy import linalg
 from kernels import KERNEL
@@ -88,6 +84,7 @@ def standardize(x,M=None,S=None,REVERSE=None):
             return xs
     else:
         return S*x+M
+<<<<<<< HEAD
 def scale(x,M=None,m=None,REVERSE=None):
     
     ''' Function that scale the data between [-1,1]
@@ -99,6 +96,19 @@ def scale(x,M=None,m=None,REVERSE=None):
     x: the standardize data
     M: the Max vector
     m: the Min vector
+=======
+    
+def scale(x,M=None,m=None,REVERSE=None):
+    ''' Function that standardize the data
+        Input:
+            x: the data
+            M: the Max vector
+            m: the Min vector
+        Output:
+            x: the standardize data
+            M: the Max vector
+            m: the Min vector
+>>>>>>> pwdist
     '''
     if not sp.issubdtype(x.dtype,float):
         do_convert = 1
@@ -106,8 +116,13 @@ def scale(x,M=None,m=None,REVERSE=None):
         do_convert = 0
     if REVERSE is None:
         if M is None:
+<<<<<<< HEAD
             M = x.max(0)
             m = x.min(0)
+=======
+            M = sp.amax(x,axis=0)
+            m = sp.amin(x,axis=0)
+>>>>>>> pwdist
             if do_convert:
                 xs = 2*(x.astype('float')-m)/(M-m)-1
             else:
@@ -120,7 +135,11 @@ def scale(x,M=None,m=None,REVERSE=None):
                 xs = 2*(x-m)/(M-m)-1
             return xs
     else:
+<<<<<<< HEAD
         return (x+1)/2*(M-m)+m
+=======
+        return (1+x)/2*(M-m)+m
+>>>>>>> pwdist
 
 class CV:#Cross_validation 
     def __init__(self):
