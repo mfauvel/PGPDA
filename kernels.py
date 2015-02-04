@@ -40,11 +40,7 @@ def compute_alignement(sig,x,y,ncpus=2):
         reduc_ks[i]= (double*)calloc(n, sizeof(double));
     double MSIG = -1.0*(double)sig;
      
-<<<<<<< HEAD
-    # pragma omp parameters for private (i,j,k,ktp,tm) shared(x,y,sig,n,d,reduc_ks)  reduction(+:s) schedule(runtime) num_threads(ncpus)
-=======
     # pragma omp parallel for private (i,j,k,ktp,tm) shared(x,MSIG,n,d,reduc_ks)  reduction(+:s) schedule(runtime) num_threads(ncpus)
->>>>>>> pwdist
     for(i=0;i<n;i++){
         tm = omp_get_thread_num();
         reduc_ks[tm][i] += 1;
