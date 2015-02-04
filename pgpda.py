@@ -18,7 +18,6 @@ def pre_compute_E_Beta(x,y,sig,kernel='RBF'):
     E_: a list of eigenvalues
     Beta_: a list of corresponding eigenvectors
     '''
-    n = y.shape[0]
     C = int(y.max())
     eps = sp.finfo(sp.float64).eps      
     E_=[]
@@ -40,7 +39,7 @@ def pre_compute_E_Beta(x,y,sig,kernel='RBF'):
         E_.append(E)
         Beta_.append(Beta)
 
-    del E, Beta_, Ki
+    del E, Beta, Ki
     return E_,Beta_
     
 def estim_d(E,threshold):
@@ -86,10 +85,42 @@ def standardize(x,M=None,S=None,REVERSE=None):
                 xs = (x.astype('float')-M)/S
             else:
                 xs = (x-M)/S
-            xs = (x-M)/S
             return xs
     else:
         return S*x+M
+def scale(x,M=None,m=None,REVERSE=None):
+    
+    ''' Function that scale the data between [-1,1]
+    Input:
+    x: the data
+    M: the Max vector
+    m: the Min vector
+    Output:
+    x: the standardize data
+    M: the Max vector
+    m: the Min vector
+    '''
+    if not sp.issubdtype(x.dtype,float):
+        do_convert = 1
+    else:
+        do_convert = 0
+    if REVERSE is None:
+        if M is None:
+            M = x.max(0)
+            m = x.min(0)
+            if do_convert:
+                xs = 2*(x.astype('float')-m)/(M-m)-1
+            else:
+                xs = 2*(x-m)/(M-m)-1
+            return xs,M,m
+        else:
+            if do_convert:
+                xs = 2*(x.astype('float')-m)/(M-m)-1
+            else:
+                xs = 2*(x-m)/(M-m)-1
+            return xs
+    else:
+        return (x+1)/2*(M-m)+m
 
 class CV:#Cross_validation 
     def __init__(self):
