@@ -1,8 +1,4 @@
-'''
-Created on 18 oct. 2014
-
-@author: mfauvel
-'''
+# -*- coding: utf-8 -*-
 import scipy as sp
 from scipy import linalg
 from kernels import KERNEL
@@ -40,7 +36,7 @@ def pre_compute_E_Beta(x,y,sig,kernel='RBF'):
         E_.append(E)
         Beta_.append(Beta)
 
-    del E, Beta_, Ki
+    del E, Beta, Ki
     return E_,Beta_
     
 def estim_d(E,threshold):
@@ -90,6 +86,39 @@ def standardize(x,M=None,S=None,REVERSE=None):
             return xs
     else:
         return S*x+M
+    
+def scale(x,M=None,m=None,REVERSE=None):
+    ''' Function that standardize the data
+        Input:
+            x: the data
+            M: the Max vector
+            m: the Min vector
+        Output:
+            x: the standardize data
+            M: the Max vector
+            m: the Min vector
+    '''
+    if not sp.issubdtype(x.dtype,float):
+        do_convert = 1
+    else:
+        do_convert = 0
+    if REVERSE is None:
+        if M is None:
+            M = sp.amax(x,axis=0)
+            m = sp.amin(x,axis=0)
+            if do_convert:
+                xs = 2*(x.astype('float')-m)/(M-m)-1
+            else:
+                xs = 2*(x-m)/(M-m)-1
+            return xs,M,m
+        else:
+            if do_convert:
+                xs = 2*(x.astype('float')-m)/(M-m)-1
+            else:
+                xs = 2*(x-m)/(M-m)-1
+            return xs
+    else:
+        return (1+x)/2*(M-m)+m
 
 class CV:#Cross_validation 
     def __init__(self):

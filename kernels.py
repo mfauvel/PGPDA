@@ -1,8 +1,4 @@
-'''
-Created on 22 oct. 2014
-
-@author: mfauvel
-'''
+# -*- coding: utf-8 -*-
 import scipy as sp
 from scipy import weave
 from scipy.weave import converters
@@ -44,7 +40,7 @@ def compute_alignement(sig,x,y,ncpus=2):
         reduc_ks[i]= (double*)calloc(n, sizeof(double));
     double MSIG = -1.0*(double)sig;
      
-    # pragma omp parameters for private (i,j,k,ktp,reduc_ks,tm) shared(x,y,sig,n,d)  reduction(+:s) schedule(runtime)
+    # pragma omp parallel for private (i,j,k,ktp,tm) shared(x,MSIG,n,d,reduc_ks)  reduction(+:s) schedule(runtime) num_threads(ncpus)
     for(i=0;i<n;i++){
         tm = omp_get_thread_num();
         reduc_ks[tm][i] += 1;
@@ -95,38 +91,71 @@ def compute_alignement(sig,x,y,ncpus=2):
     A=weave.inline(code,['sig','n','d','x','y','ncpus'],support_code=support_code,type_converters = converters.blitz,compiler='gcc',extra_compile_args =['-O3 -fopenmp'], extra_link_args=['-lgomp'],)
     return A
 
-def sq_dist(X,Z=None):
+def kernel_rbf(X,sig,Z=None,ncpus=None):
     '''
-    The function to computes a matrix of all pairwise squared distances between two sets of vectors
-    Substract the mean value for numerical precision
-    
-    (x-z)^2 = x^2+z^2-2<x,z>
+    TBD
     '''
-    x=X.copy()
-     
+    if ncpus is None:
+        ncpus=mp.cpu_count()
+        
     if Z is None:
-        z=x
-        nx = x.shape[0]
-        mu = sp.mean(x,axis=0)
-        x-=mu
-        z-=mu
-        D = -2*sp.dot(x,z.T)
-        x2 = sp.sum(x**2,axis=1)
-        D += x2.reshape(nx,1)
-        D += x2.T.reshape(1,nx)
-    else:
-        z=Z.copy() 
-        nx,nz = x.shape[0],z.shape[0]
-        n = nx+nz        
-        mu = (nx*sp.mean(x,axis=0)+nz*sp.mean(x,axis=0))/n
-        x -= mu
-        z -= mu
-        D = -2*sp.dot(x,z.T)
-        D += sp.sum(x**2,axis=1).reshape(nx,1)
-        D += sp.sum(z**2,axis=1).T.reshape(1,nz)
-                
-    return D
+        n,d = X.shape
+        K = sp.empty((n,n))
+        support_code="""
+        #include <math.h>
+        #include <stdio.h>
+        #include <omp.h>
+        """
 
+        code=r"""
+        int i,j,k;
+        double ktp;
+        double MSIG = -1.0*(double)sig;
+    
+        #pragma omp parallel for private(i,j,k) shared(X,K,n,d) schedule(runtime) num_threads(ncpus)
+        for(i=0;i<n;i++){
+        K(i,i)=1;
+        for(j=i+1;j<n;j++){
+            ktp = 0;
+            for(k=0;k<d;k++)
+                ktp += (X(i,k)-X(j,k))*(X(i,k)-X(j,k));
+            K(i,j)=exp(MSIG*ktp);
+            K(j,i)=K(i,j);
+            }
+        }
+        """
+        weave.inline(code,['X','n','d','K','sig','ncpus'],support_code=support_code,type_converters = converters.blitz,compiler='gcc',extra_compile_args =['-O3 -fopenmp'], extra_link_args=['-lgomp'])
+
+    else:
+        nt,d = X.shape
+        n=Z.shape[0]
+        
+        K = sp.empty((nt,n))
+        support_code="""
+        #include <math.h>
+        #include <stdio.h>
+        #include <omp.h>
+        """
+
+        code=r"""
+        int i,j,k;
+        double ktp;
+        double MSIG = -1.0*(double)sig;
+        
+        #pragma omp parallel for private(i,j,k) shared(X,Z,K,n,d) schedule(runtime) num_threads(ncpus)
+        for(i=0;i<nt;i++){
+            for(j=0;j<n;j++){
+            ktp = 0;
+            for(k=0;k<d;k++)
+                ktp += (X(i,k)-Z(j,k))*(X(i,k)-Z(j,k));
+            K(i,j)=exp(MSIG*ktp);
+            }
+        }
+        """
+        weave.inline(code,['X','Z','n','nt','d','K','sig','ncpus'],support_code=support_code,type_converters = converters.blitz,compiler='gcc',extra_compile_args =['-O3 -fopenmp'], extra_link_args=['-lgomp'])
+
+    return K
+    
 class KERNEL:
     def __init__(self):
         self.K=0
@@ -154,13 +183,8 @@ class KERNEL:
             
         if kernel == 'RBF':
             self.rank=x.shape[0] # Get the rank of the matrix
-            ## Compute the pairwise distance matrix
-            D = sq_dist(x,z)
-            D *= (-1.0*sig)
-
-            ## Compute the Kernel matrix
-            self.K = sp.exp(D)
-            del D
+            self.K = kernel_rbf(x,sig,Z=z)
+            
       
     def compute_diag_kernel(self,x,kernel='RBF',sig=None):
         '''
