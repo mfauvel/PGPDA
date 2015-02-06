@@ -93,7 +93,10 @@ def compute_alignement(sig,x,y,ncpus=2):
 
 def kernel_rbf(X,sig,Z=None,ncpus=None):
     '''
-    TBD
+    Compute the kernel matrix using inline C to prevent memory problem. Not the fastest, but surely the safest
+    Input:
+    X,Z: the sample matrix
+    sig: the kernel parameter
     '''
     if ncpus is None:
         ncpus=mp.cpu_count()
@@ -155,6 +158,38 @@ def kernel_rbf(X,sig,Z=None,ncpus=None):
         weave.inline(code,['X','Z','n','nt','d','K','sig','ncpus'],support_code=support_code,type_converters = converters.blitz,compiler='gcc',extra_compile_args =['-O3 -fopenmp'], extra_link_args=['-lgomp'])
 
     return K
+
+def sq_dist(X,Z=None):
+    '''
+    The function to computes a matrix of all pairwise squared distances between two sets of vectors
+    Substract the mean value for numerical precision
+    
+    (x-z)^2 = x^2+z^2-2<x,z>
+    '''
+    x=X.copy()
+     
+    if Z is None:
+        z=x
+        nx = x.shape[0]
+        mu = sp.mean(x,axis=0)
+        x-=mu
+        z-=mu
+        D = -2*sp.dot(x,z.T)
+        x2 = sp.sum(x**2,axis=1)
+        D += x2.reshape(nx,1)
+        D += x2.T.reshape(1,nx)
+    else:
+        z=Z.copy() 
+        nx,nz = x.shape[0],z.shape[0]
+        n = nx+nz        
+        mu = (nx*sp.mean(x,axis=0)+nz*sp.mean(x,axis=0))/n
+        x -= mu
+        z -= mu
+        D = -2*sp.dot(x,z.T)
+        D += sp.sum(x**2,axis=1).reshape(nx,1)
+        D += sp.sum(z**2,axis=1).T.reshape(1,nz)
+                
+    return D
     
 class KERNEL:
     def __init__(self):
@@ -182,8 +217,22 @@ class KERNEL:
             exit()
             
         if kernel == 'RBF':
-            self.rank=x.shape[0] # Get the rank of the matrix
-            self.K = kernel_rbf(x,sig,Z=z)
+            n = x.shape[0]
+            self.rank= n
+            if z is None:
+                D = sq_dist(x,z)
+                D *= (-1.0*sig)
+                self.K = sp.exp(D)
+                del D
+            else:
+                nt = z.shape[0]
+                if nt*n>10**8:# To be adjusted in function of the RAM   
+                    self.K = kernel_rbf(x,sig,Z=z)
+                else:
+                    D = sq_dist(x,z)
+                    D *= (-1.0*sig)
+                    self.K = sp.exp(D)
+                    del D
             
       
     def compute_diag_kernel(self,x,kernel='RBF',sig=None):
